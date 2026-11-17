@@ -32,6 +32,108 @@ export function isSupportedFile(file: File): boolean {
   return IMAGE_TYPES.has(file.type) || file.type === 'application/pdf';
 }
 
+/* ------------------------------------------------------------------ */
+/* Orientation handling                                                 */
+/*                                                                      */
+/* Real-world scans of certificates/marksheets are frequently stored   */
+/* sideways — either via EXIF orientation tags or baked into pixels.   */
+/* Browsers honour EXIF when decoding into an ImageBitmap, but files  */
+/* with baked-in rotation still need detection. We analyse the ink     */
+/* banding: upright text creates strong horizontal density stripes.    */
+/* ------------------------------------------------------------------ */
+
+function rotateCanvas(src: HTMLCanvasElement, deg: number): HTMLCanvasElement {
+  const out = document.createElement('canvas');
+  const swap = deg === 90 || deg === 270;
+  out.width = swap ? src.height : src.width;
+  out.height = swap ? src.width : src.height;
+  const ctx = out.getContext('2d')!;
+  ctx.translate(out.width / 2, out.height / 2);
+  ctx.rotate((deg * Math.PI) / 180);
+  ctx.drawImage(src, -src.width / 2, -src.height / 2);
+  return out;
+}
+
+function downscaled(src: HTMLCanvasElement, maxDim: number): HTMLCanvasElement {
+  const scale = Math.min(1, maxDim / Math.max(src.width, src.height));
+  if (scale >= 1) return src;
+  const out = document.createElement('canvas');
+  out.width = Math.round(src.width * scale);
+  out.height = Math.round(src.height * scale);
+  out.getContext('2d')!.drawImage(src, 0, 0, out.width, out.height);
+  return out;
+}
+
+type OrientationGuess = 'upright' | 'rotated' | 'ambiguous';
+
+/**
+ * Compare horizontal vs vertical ink-density variance. Text-heavy pages
+ * produce strong row banding when upright; rotated pages flip it.
+ */
+function guessOrientation(canvas: HTMLCanvasElement): OrientationGuess {
+  const probe = downscaled(canvas, 220);
+  const ctx = probe.getContext('2d', { willReadFrequently: true })!;
+  const { width, height } = probe;
+  const px = ctx.getImageData(0, 0, width, height).data;
+
+  const rows = new Float64Array(height);
+  const cols = new Float64Array(width);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const lum = (px[i] * 3 + px[i + 1] * 6 + px[i + 2]) / 10;
+      if (lum < 140) {
+        rows[y]++;
+        cols[x]++;
+      }
+    }
+  }
+  const cv = (a: Float64Array) => {
+    let s = 0, s2 = 0;
+    for (const v of a) {
+      s += v;
+      s2 += v * v;
+    }
+    const mean = s / a.length;
+    return mean === 0 ? 0 : Math.sqrt(s2 / a.length - mean * mean) / mean;
+  };
+  const rowCv = cv(rows);
+  const colCv = cv(cols);
+  if (rowCv > colCv * 1.15) return 'upright';
+  if (colCv > rowCv * 1.15) return 'rotated';
+  return 'ambiguous';
+}
+
+/**
+ * OCR a canvas, automatically resolving sideways/upside-down scans.
+ * Rotated/ambiguous pages are probed at low resolution first so we pay
+ * the full-resolution cost only once.
+ */
+async function recognizeUpright(
+  worker: import('tesseract.js').Worker,
+  canvas: HTMLCanvasElement
+) {
+  const guess = guessOrientation(canvas);
+  if (guess === 'upright') {
+    return (await worker.recognize(canvas)).data;
+  }
+  const low = downscaled(canvas, 900);
+  const candidates = guess === 'rotated' ? [90, 270] : [0, 90, 180, 270];
+  let bestDeg = 0;
+  let bestScore = -1;
+  for (const deg of candidates) {
+    const probe = deg === 0 ? low : rotateCanvas(low, deg);
+    const { data } = await worker.recognize(probe);
+    const score = data.confidence + Math.min(data.text.length / 400, 10);
+    if (score > bestScore) {
+      bestScore = score;
+      bestDeg = deg;
+    }
+  }
+  const final = bestDeg === 0 ? canvas : rotateCanvas(canvas, bestDeg);
+  return (await worker.recognize(final)).data;
+}
+
 export async function extractText(
   file: File,
   onProgress: OcrProgress
@@ -54,7 +156,17 @@ async function extractFromImage(
   );
   try {
     onProgress(0.05, 'Loading image');
-    const { data } = await worker.recognize(file);
+    // createImageBitmap honours EXIF orientation ('from-image'), so photos
+    // taken sideways decode upright before Tesseract ever sees them.
+    const bitmap = await createImageBitmap(file, {
+      imageOrientation: 'from-image',
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const data = await recognizeUpright(worker, canvas);
     onProgress(1, 'Done');
     return { text: data.text, pages: 1, ocrPages: 1 };
   } finally {
@@ -114,7 +226,7 @@ async function extractFromPdf(
       canvas.height = Math.floor(viewport.height);
       await page.render({ canvas, viewport }).promise;
 
-      const { data: ocrData } = await w.recognize(canvas);
+      const ocrData = await recognizeUpright(w, canvas);
       texts.push(ocrData.text);
       onProgress(base + span, `OCR'd page ${i}/${pageCount}`);
       canvas.width = 0; // release backing buffer

@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { extractText } from '@/lib/ocr';
 import { parseDocuments } from '@/lib/parser';
+import { enhanceWithAi, mergeAiResult, hasWebGPU } from '@/lib/ai';
 import { BuilderStep, ExtractedFile, ResumeData, emptyResume, uid } from '@/lib/types';
 import FileUpload from '@/components/FileUpload';
 import ResumeForm from '@/components/ResumeForm';
@@ -142,6 +143,12 @@ export default function ResumeBuilder() {
   const [resume, setResume] = useState<ResumeData>(emptyResume());
   const [template, setTemplate] = useState<TemplateId>('modern');
   const [extractedOnce, setExtractedOnce] = useState(false);
+  const [aiState, setAiState] = useState<
+    | { kind: 'idle' }
+    | { kind: 'loading'; progress: number; label: string }
+    | { kind: 'done' }
+    | { kind: 'error'; message: string }
+  >({ kind: 'idle' });
   const processingRef = useRef(false);
 
   const updateFile = useCallback((id: string, patch: Partial<ExtractedFile>) => {
@@ -231,6 +238,29 @@ export default function ResumeBuilder() {
     fileMapRef.current.delete(ef.id);
     setFiles((fs) => fs.filter((f) => f.id !== ef.id));
   }, []);
+
+  const runAi = useCallback(async () => {
+    if (aiState.kind === 'loading') return;
+    const texts = files.filter((f) => f.status === 'done').map((f) => f.text);
+    if (!texts.length) return;
+    setAiState({ kind: 'loading', progress: 0, label: 'Preparing AI model…' });
+    try {
+      const ai = await enhanceWithAi(texts, (frac, label) =>
+        setAiState({ kind: 'loading', progress: frac, label })
+      );
+      if (ai) {
+        setResume((r) => mergeAiResult(r, ai));
+        setAiState({ kind: 'done' });
+      } else {
+        setAiState({ kind: 'error', message: 'AI returned no usable data' });
+      }
+    } catch (err) {
+      setAiState({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'AI enhancement failed',
+      });
+    }
+  }, [aiState.kind, files]);
 
   const reset = useCallback(() => {
     fileMapRef.current.clear();
@@ -326,6 +356,47 @@ export default function ResumeBuilder() {
             <ResumeForm resume={resume} onChange={setResume} />
           </div>
           <aside className="space-y-4">
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+              <h3 className="text-sm font-semibold text-indigo-900">
+                AI enhancement — runs on your device
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-indigo-700">
+                A small language model re-reads the extracted text and fills
+                gaps. It runs {hasWebGPU() ? 'on your GPU' : 'in-browser'} — no
+                API key, nothing is sent anywhere. First use downloads ~1 GB
+                once, then it&apos;s cached.
+              </p>
+              {aiState.kind === 'loading' ? (
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-indigo-800">
+                    {aiState.label}
+                  </p>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-indigo-100">
+                    <div
+                      className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+                      style={{ width: `${Math.round(aiState.progress * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ) : aiState.kind === 'done' ? (
+                <p className="mt-3 text-xs font-medium text-emerald-700">
+                  ✓ AI pass complete — fields were filled where empty.
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={runAi}
+                  className="mt-3 w-full rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+                >
+                  Enhance with AI
+                </button>
+              )}
+              {aiState.kind === 'error' && (
+                <p className="mt-2 text-xs text-rose-600">
+                  AI failed: {aiState.message}. Your extracted data is unchanged.
+                </p>
+              )}
+            </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <h3 className="text-sm font-semibold text-slate-700">Source documents</h3>
               <ul className="mt-3 space-y-2">

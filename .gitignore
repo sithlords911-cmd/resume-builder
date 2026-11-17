@@ -45,3 +45,8 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# real user documents used for local parser testing — never commit
+testdata/*
+!testdata/marksheet.png
+!testdata/certificate.png

@@ -17,7 +17,6 @@ export const SKILL_MAP: Record<string, string> = {
   swift: 'Swift',
   php: 'PHP',
   ruby: 'Ruby',
-  r: 'R',
   scala: 'Scala',
   matlab: 'MATLAB',
   dart: 'Dart',
@@ -55,7 +54,6 @@ export const SKILL_MAP: Record<string, string> = {
   webpack: 'Webpack',
   vite: 'Vite',
   sass: 'Sass',
-  less: 'Less',
   'three.js': 'Three.js',
   'd3.js': 'D3.js',
   flutter: 'Flutter',
@@ -214,7 +212,6 @@ export const SKILL_MAP: Record<string, string> = {
 
   // Business / soft
   leadership: 'Leadership',
-  communication: 'Communication',
   'team management': 'Team Management',
   'public speaking': 'Public Speaking',
   'problem solving': 'Problem Solving',
@@ -233,6 +230,19 @@ export const SKILL_MAP: Record<string, string> = {
   tally: 'Tally',
   'ms office': 'MS Office',
   'microsoft office': 'MS Office',
-  word: 'MS Word',
   powerpoint: 'PowerPoint',
+
+  // Academic subjects (common on Indian marksheets — useful for freshers)
+  mathematics: 'Mathematics',
+  physics: 'Physics',
+  chemistry: 'Chemistry',
+  biology: 'Biology',
+  'computer science': 'Computer Science',
+  'social science': 'Social Science',
+  economics: 'Economics',
+  accountancy: 'Accountancy',
+  'business studies': 'Business Studies',
+  'political science': 'Political Science',
+  geography: 'Geography',
+  psychology: 'Psychology',
 };
