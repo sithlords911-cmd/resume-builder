@@ -42,3 +42,6 @@ next-env.d.ts
 
 # tesseract language data downloaded by local test runs
 *.traineddata
+
+.vercel
+.env*
