@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DocuResume — OCR-powered résumé builder
 
-## Getting Started
+Upload your documents — marksheets, certificates, ID proofs, offer letters — and
+DocuResume extracts the details and assembles a polished, editable résumé you can
+print or save as PDF.
 
-First, run the development server:
+**Everything runs 100% in your browser.** Files are read with the File API,
+OCR'd in a Web Worker, and parsed locally. No file is ever uploaded, stored, or
+sent to a server. Closing the tab discards everything.
+
+## How it works
+
+1. **Upload** — drag & drop PDFs or images (JPG, PNG, WEBP, TIFF, BMP).
+2. **Extract** —
+   - Images → [Tesseract.js](https://tesseract.projectnaptha.com/) OCR in a worker.
+   - PDFs → [pdf.js](https://mozilla.github.io/pdf.js/) reads the embedded text
+     layer; pages with no text layer (scans/photos) are rendered to canvas and
+     OCR'd.
+3. **Parse** — a heuristic parser (`src/lib/parser.ts`) pulls out contact info,
+   education, experience, skills, certifications, projects, achievements and
+   languages from the raw text.
+4. **Review & edit** — every field is editable before generating.
+5. **Export** — two templates (modern / classic) → print or *Save as PDF*.
+
+## Tech stack
+
+- Next.js 16 (App Router, static export-safe) + React 19 + Tailwind CSS 4
+- `tesseract.js` — client-side OCR
+- `pdfjs-dist` — PDF text layer + page rendering (worker served from `public/`)
+
+## Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
+npm run build   # production build
+npm run lint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Testing the pipeline locally
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`scripts/test-pipeline.mts` runs real OCR on the fixtures in `testdata/` and
+prints the extracted résumé JSON:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npx tsx scripts/test-pipeline.mts
+```
 
-## Learn More
+## Privacy notes
 
-To learn more about Next.js, take a look at the following resources:
+- No backend routes handle files — the app is a fully static page.
+- The OCR engine caches its language data in IndexedDB for speed (browser-local
+  storage only, can be cleared anytime). Document contents are never cached.
+- Nothing you upload or generate persists after the tab closes.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The app is fully static and deploys to Vercel with zero configuration:
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+vercel deploy
+```

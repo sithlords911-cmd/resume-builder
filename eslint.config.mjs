@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored pdf.js worker bundle served as a static asset:
+    "public/pdf.worker.min.mjs",
+    // Local test fixtures:
+    "testdata/**",
+    "scripts/**",
   ]),
 ]);
 
